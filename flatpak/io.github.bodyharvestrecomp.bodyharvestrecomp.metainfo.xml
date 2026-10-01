@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.bodyharvestrecomp.bodyharvestrecomp</id>
+  
+  <name>Body Harvest: Recompiled</name>
+  <summary>Static recompilation of Body Harvest for PC.</summary>
+  
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0+</project_license>
+  
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>gamepad</control>
+  </supports>
+  
+  <description>
+    <p>
+      Body Harvest: Recompiled is a project that uses N64: Recompiled to statically recompile Body Harvest into a native port. This project uses RT64 as the rendering engine to provide graphical enhancements.
+
+      The original game is required to run this project.
+
+      https://github.com/mcsoderh/BodyHarvestRecomp
+    </p>
+  </description>
+  
+  <launchable type="desktop-id">io.github.bodyharvestrecomp.bodyharvestrecomp.desktop</launchable>
+</component>

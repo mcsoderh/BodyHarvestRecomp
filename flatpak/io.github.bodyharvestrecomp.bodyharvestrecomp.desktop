@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Body Harvest: Recompiled
+Exec=/app/bin/BodyHarvestRecompiled
+Type=Application
+Icon=io.github.bodyharvestrecomp.bodyharvestrecomp
+Categories=Game;
+Comment=Static recompilation of Body Harvest for PC.
+MimeType=x-scheme-handler/bodyharvestrecomp

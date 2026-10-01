@@ -1,0 +1,57 @@
+name: release
+on:
+  push:
+    tags:
+      - 'v*'
+jobs:
+  build:
+    uses: ./.github/workflows/validate.yml
+    secrets: inherit
+  publish:
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows build
+        uses: actions/download-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-Windows-RelWithDebInfo
+          path: windows
+      - name: Download Linux x64 build
+        uses: actions/download-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-Linux-X64-Release
+          path: linux-x64
+      - name: Download Linux arm64 build
+        uses: actions/download-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-Linux-ARM64-Release
+          path: linux-arm64
+      - name: Download Flatpak build
+        uses: actions/download-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-Flatpak-X64-Release
+          path: flatpak
+      - name: Download macOS build
+        uses: actions/download-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-macOS-Release
+          path: macos
+      - name: Package
+        run: |
+          (cd windows && zip -r "../BodyHarvestRecompiled-${GITHUB_REF_NAME}-Windows.zip" .)
+          mv linux-x64/BodyHarvestRecompiled.tar.gz "BodyHarvestRecompiled-${GITHUB_REF_NAME}-Linux-X64.tar.gz"
+          mv linux-arm64/BodyHarvestRecompiled.tar.gz "BodyHarvestRecompiled-${GITHUB_REF_NAME}-Linux-ARM64.tar.gz"
+          mv flatpak/io.github.bodyharvestrecomp.bodyharvestrecomp.flatpak "BodyHarvestRecompiled-${GITHUB_REF_NAME}-Linux-X64.flatpak"
+          mv macos/BodyHarvestRecompiled.zip "BodyHarvestRecompiled-${GITHUB_REF_NAME}-macOS.zip"
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: |
+            BodyHarvestRecompiled-${{ github.ref_name }}-Windows.zip
+            BodyHarvestRecompiled-${{ github.ref_name }}-Linux-X64.tar.gz
+            BodyHarvestRecompiled-${{ github.ref_name }}-Linux-ARM64.tar.gz
+            BodyHarvestRecompiled-${{ github.ref_name }}-Linux-X64.flatpak
+            BodyHarvestRecompiled-${{ github.ref_name }}-macOS.zip

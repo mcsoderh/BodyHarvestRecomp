@@ -1,0 +1,2 @@
+# Dependency patches are applied with git apply and must keep LF line endings.
+*.patch text eol=lf

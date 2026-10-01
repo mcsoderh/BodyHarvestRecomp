@@ -1,0 +1,54 @@
+{
+  "id": "io.github.bodyharvestrecomp.bodyharvestrecomp",
+  "command": "BodyHarvestRecompiled",
+  "runtime": "org.freedesktop.Platform",
+  "runtime-version": "25.08",
+  "sdk": "org.freedesktop.Sdk",
+  "sdk-extensions" : [ "org.freedesktop.Sdk.Extension.llvm20" ],
+  "finish-args": [
+    "--share=network",
+    "--socket=wayland",
+    "--socket=fallback-x11",
+    "--socket=pulseaudio",
+    "--device=all",
+    "--filesystem=host",
+    "--filesystem=/media",
+    "--filesystem=/run/media",
+    "--filesystem=/mnt"
+  ],
+  "modules": [
+    {
+      "name": "BodyHarvestRecompiled",
+      "buildsystem": "simple",
+      "build-commands": [
+        "cmake -P cmake/apply_dep_patches.cmake",
+        "cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S lib/N64ModernRuntime/N64Recomp -B build-tools",
+        "cmake --build build-tools --config Release --target N64RecompCLI RSPRecomp --parallel",
+        "./build-tools/N64Recomp bh.us.toml",
+        "./build-tools/RSPRecomp aspMain.toml",
+        "cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang -DCMAKE_MAKE_PROGRAM=ninja -DPATCHES_C_COMPILER=clang -DPATCHES_LD=ld.lld -DRECOMP_FLATPAK=ON -G Ninja -S . -B cmake-build",
+        "cmake --build cmake-build --config Release --target BodyHarvestRecompiled --parallel",
+        "mkdir -p /app/bin",
+        "cp cmake-build/BodyHarvestRecompiled /app/bin/BodyHarvestRecompiled",
+        "cp recompcontrollerdb.txt /app/bin/recompcontrollerdb.txt",
+        "cp -R assets /app/bin/assets",
+        "install -Dm644 icons/app.png /app/share/icons/hicolor/512x512/apps/${FLATPAK_ID}.png",
+        "install -Dm644 flatpak/io.github.bodyharvestrecomp.bodyharvestrecomp.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml",
+        "install -Dm644 flatpak/io.github.bodyharvestrecomp.bodyharvestrecomp.desktop /app/share/applications/${FLATPAK_ID}.desktop"
+      ],
+      "sources": [
+        {
+          "type": "dir",
+          "path": "../"
+        }
+      ],
+      "build-options": {
+        "append-path": "/usr/lib/sdk/llvm20/bin",
+        "prepend-ld-library-path": "/usr/lib/sdk/llvm20/lib",
+        "build-args": [
+          "--share=network"
+        ]
+      }
+    }
+  ]
+}

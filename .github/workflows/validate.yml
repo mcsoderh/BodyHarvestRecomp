@@ -1,0 +1,324 @@
+name: validate
+on:
+  workflow_call:
+    inputs:
+      SDL2_VERSION:
+        type: string
+        required: false
+        default: '2.30.3'
+    secrets:
+      BH_SECRET_REPO:
+        required: true
+      BH_SECRET_PAT:
+        required: true
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  build-linux:
+    runs-on: ubuntu-22.04
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+    name: ubuntu-22.04 (x64, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-22.04-bh-ccache-${{ matrix.type }}-x64
+      - name: Get ROM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BH_SECRET_REPO }}
+          token: ${{ secrets.BH_SECRET_PAT }}
+          path: extra
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev lld llvm clang-15 libfuse2
+
+          echo ::group::install SDL2
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          wget https://github.com/libsdl-org/SDL/releases/download/release-${{ inputs.SDL2_VERSION }}/SDL2-${{ inputs.SDL2_VERSION }}.tar.gz
+          tar -xzf SDL2-${{ inputs.SDL2_VERSION }}.tar.gz
+          cd SDL2-${{ inputs.SDL2_VERSION }}
+          ./configure
+          make -j 10
+          sudo make install
+          sudo cp -av /usr/local/lib/libSDL* /lib/x86_64-linux-gnu/
+          echo ::endgroup::
+      - name: Generate recompiled code
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cp extra/bh.us.z64 .
+          cmake -P cmake/apply_dep_patches.cmake
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang++-15 -DCMAKE_C_COMPILER=clang-15 -G Ninja -S lib/N64ModernRuntime/N64Recomp -B build-tools
+          cmake --build build-tools --target N64RecompCLI RSPRecomp -j $(nproc)
+          ./build-tools/N64Recomp bh.us.toml
+          ./build-tools/RSPRecomp aspMain.toml
+      - name: Build BodyHarvestRecompiled
+        run: |-
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang++-15 -DCMAKE_C_COMPILER=clang-15 -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build -DPATCHES_C_COMPILER=clang-15 -DPATCHES_LD=ld.lld-15
+          cmake --build cmake-build --config ${{ matrix.type }} --target BodyHarvestRecompiled -j $(nproc)
+      - name: Prepare Archive
+        run: |
+          mv cmake-build/BodyHarvestRecompiled BodyHarvestRecompiled
+          tar -czf BodyHarvestRecompiled.tar.gz BodyHarvestRecompiled assets/ recompcontrollerdb.txt
+      - name: Archive BodyHarvestRecompiled
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-${{ runner.os }}-X64-${{ matrix.type }}
+          path: BodyHarvestRecompiled.tar.gz
+  build-linux-arm64:
+    runs-on: ubuntu-22.04-arm
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+    name: ubuntu-22.04 (arm64, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-22.04-bh-ccache-${{ matrix.type }}-arm64
+      - name: Get ROM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BH_SECRET_REPO }}
+          token: ${{ secrets.BH_SECRET_PAT }}
+          path: extra
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libgtk-3-dev lld llvm clang-15 libfuse2
+
+          echo ::group::install SDL2
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          wget https://github.com/libsdl-org/SDL/releases/download/release-${{ inputs.SDL2_VERSION }}/SDL2-${{ inputs.SDL2_VERSION }}.tar.gz
+          tar -xzf SDL2-${{ inputs.SDL2_VERSION }}.tar.gz
+          cd SDL2-${{ inputs.SDL2_VERSION }}
+          ./configure
+          make -j 10
+          sudo make install
+          sudo cp -av /usr/local/lib/libSDL* /lib/aarch64-linux-gnu/
+          echo ::endgroup::
+      - name: Generate recompiled code
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cp extra/bh.us.z64 .
+          cmake -P cmake/apply_dep_patches.cmake
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang++-15 -DCMAKE_C_COMPILER=clang-15 -G Ninja -S lib/N64ModernRuntime/N64Recomp -B build-tools
+          cmake --build build-tools --target N64RecompCLI RSPRecomp -j $(nproc)
+          ./build-tools/N64Recomp bh.us.toml
+          ./build-tools/RSPRecomp aspMain.toml
+      - name: Build BodyHarvestRecompiled
+        run: |-
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang++-15 -DCMAKE_C_COMPILER=clang-15 -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build
+          cmake --build cmake-build --config ${{ matrix.type }} --target BodyHarvestRecompiled -j $(nproc)
+      - name: Prepare Archive
+        run: |
+          mv cmake-build/BodyHarvestRecompiled BodyHarvestRecompiled
+          tar -czf BodyHarvestRecompiled.tar.gz BodyHarvestRecompiled assets/ recompcontrollerdb.txt
+      - name: Archive BodyHarvestRecompiled
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-${{ runner.os }}-ARM64-${{ matrix.type }}
+          path: BodyHarvestRecompiled.tar.gz
+  build-linux-flatpak:
+    runs-on: ubuntu-latest
+    env:
+      FLATPAK_ID: io.github.bodyharvestrecomp.bodyharvestrecomp
+      FREEDESKTOP_VERSION: 25.08
+      LLVM_VERSION: 20
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+    name: ubuntu-latest (x64, ${{ matrix.type }}, Flatpak)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ubuntu-latest-bh-ccache-${{ matrix.type }}-x64-flatpak
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak-builder ccache lld
+      - name: Get ROM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BH_SECRET_REPO }}
+          token: ${{ secrets.BH_SECRET_PAT }}
+          path: extra
+      - name: Prepare Flatpak
+        run: |
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y flathub org.freedesktop.Sdk//${{ env.FREEDESKTOP_VERSION }}
+          flatpak --user install -y flathub org.freedesktop.Sdk.Extension.llvm${{ env.LLVM_VERSION }}//${{ env.FREEDESKTOP_VERSION }}
+      - name: Build BodyHarvestRecompiled
+        run: |-
+          cp extra/bh.us.z64 .
+          export CCACHE_DIR=/tmp/ccache
+          git config --global protocol.file.allow always
+          # The Flatpak LLVM extension has no MIPS target, so build the patches on the host.
+          make -C patches CC=clang LD=ld.lld
+          flatpak-builder --user --force-clean --install-deps-from=flathub --repo=repo --ccache builddir ./flatpak/${{ env.FLATPAK_ID }}.json
+          flatpak build-bundle repo ./${{ env.FLATPAK_ID }}.flatpak ${{ env.FLATPAK_ID }} --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-Flatpak-X64-${{ matrix.type }}
+          path: ./${{ env.FLATPAK_ID }}.flatpak
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        type: [ Debug, RelWithDebInfo ]
+    name: windows (${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-bh-ccache-${{ matrix.type }}
+      - name: Install Windows Dependencies
+        run: |
+          choco install ninja
+          Remove-Item -Path "C:\ProgramData\Chocolatey\bin\ccache.exe" -Force -ErrorAction SilentlyContinue
+      - name: Download portable LLVM
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://github.com/llvm/llvm-project/releases/download/llvmorg-19.1.3/LLVM-19.1.3-Windows-X64.tar.xz" -OutFile "LLVM.tar.xz"
+          New-Item -ItemType Directory -Path portable-llvm > $null
+          7z x LLVM.tar.xz
+          7z x LLVM.tar -oportable-llvm
+      - name: Configure Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Get ROM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BH_SECRET_REPO }}
+          token: ${{ secrets.BH_SECRET_PAT }}
+          path: extra
+      - name: Generate recompiled code
+        run: |
+          # remove LLVM from PATH so it doesn't overshadow the one provided by VS
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne 'C:\Program Files\LLVM\bin' }) -join ';'
+          $cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+
+          cp extra/bh.us.z64 .
+          cmake -P cmake/apply_dep_patches.cmake
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S lib/N64ModernRuntime/N64Recomp -B build-tools
+          cmake --build build-tools --target N64RecompCLI RSPRecomp -j $cpuCores
+          ./build-tools/N64Recomp.exe bh.us.toml
+          ./build-tools/RSPRecomp.exe aspMain.toml
+      - name: Build BodyHarvestRecompiled
+        run: |-
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne 'C:\Program Files\LLVM\bin' }) -join ';'
+          $cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl -DCMAKE_MAKE_PROGRAM=ninja -DPATCHES_C_COMPILER="..\portable-llvm\LLVM-19.1.3-Windows-X64\bin\clang" -DPATCHES_LD="..\portable-llvm\LLVM-19.1.3-Windows-X64\bin\ld.lld" -G Ninja -S . -B cmake-build -DCMAKE_CXX_FLAGS="-Xclang -fexceptions -Xclang -fcxx-exceptions -D__PRFCHWINTRIN_H" -DCMAKE_C_FLAGS="-D__PRFCHWINTRIN_H"
+          cmake --build cmake-build --config ${{ matrix.type }} --target BodyHarvestRecompiled -j $cpuCores
+        env:
+          SDL2_VERSION: ${{ inputs.SDL2_VERSION }}
+      - name: Prepare Archive
+        run: |
+          Move-Item -Path "cmake-build/BodyHarvestRecompiled.exe" -Destination "BodyHarvestRecompiled.exe"
+          Move-Item -Path "cmake-build/dxcompiler.dll" -Destination "dxcompiler.dll"
+          Move-Item -Path "cmake-build/dxil.dll" -Destination "dxil.dll"
+          Move-Item -Path "cmake-build/SDL2.dll" -Destination "SDL2.dll"
+          Move-Item -Path "cmake-build/BodyHarvestRecompiled.pdb" -Destination "BodyHarvestRecompiled.pdb"
+      - name: Archive BodyHarvestRecompiled
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-${{ runner.os }}-${{ matrix.type }}
+          path: |
+            BodyHarvestRecompiled.exe
+            dxcompiler.dll
+            dxil.dll
+            SDL2.dll
+            assets/
+            recompcontrollerdb.txt
+      - name: Archive Debug Files
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-PDB-${{ matrix.type }}
+          path: |
+            BodyHarvestRecompiled.pdb
+  build-macos:
+    runs-on: macos-14
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+    name: macos (x64, arm64, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.ref }}
+          submodules: recursive
+      - name: Make ld64 executable
+        run: chmod +x .github/macos/ld64
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-bh-ccache-${{ matrix.type }}
+      - name: Homebrew Setup
+        run: |
+          brew install ninja
+          brew uninstall --ignore-dependencies libpng freetype
+      - name: MacPorts Setup
+        uses: melusina-org/setup-macports@v1
+        id: 'macports'
+        with:
+          parameters: '.github/macos/macports.yaml'
+      - name: Get ROM
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ secrets.BH_SECRET_REPO }}
+          token: ${{ secrets.BH_SECRET_PAT }}
+          path: extra
+      - name: Generate recompiled code
+        run: |
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cp extra/bh.us.z64 .
+          cmake -P cmake/apply_dep_patches.cmake
+          cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S lib/N64ModernRuntime/N64Recomp -B build-tools
+          cmake --build build-tools --target N64RecompCLI RSPRecomp -j $(sysctl -n hw.ncpu)
+          ./build-tools/N64Recomp bh.us.toml
+          ./build-tools/RSPRecomp aspMain.toml
+      - name: Build BodyHarvestRecompiled
+        run: |-
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build \
+          -DPATCHES_LD=/opt/local/bin/ld.lld-mp-18 -DCMAKE_AR=/opt/local/bin/llvm-ar-mp-18 -DPATCHES_C_COMPILER=/opt/local/bin/clang-mp-18 \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64"
+          cmake --build cmake-build --config ${{ matrix.type }} --target BodyHarvestRecompiled -j $(sysctl -n hw.ncpu)
+      - name: Prepare Archive
+        run: |
+          mv cmake-build/BodyHarvestRecompiled.app BodyHarvestRecompiled.app
+          zip -r -y BodyHarvestRecompiled.zip BodyHarvestRecompiled.app
+      - name: Archive BodyHarvestRecompiled
+        uses: actions/upload-artifact@v4
+        with:
+          name: BodyHarvestRecompiled-${{ runner.os }}-${{ matrix.type }}
+          path: BodyHarvestRecompiled.zip

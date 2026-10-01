@@ -1,0 +1,141 @@
+#include <array>
+#include <cassert>
+#include <algorithm>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include "SDL.h"
+
+#include "audio.h"
+#include "recompui/config.h"
+#include "recompui/recompui.h"
+
+static SDL_AudioCVT audio_convert;
+static SDL_AudioDeviceID audio_device = 0;
+
+// Samples per channel per second.
+static uint32_t sample_rate = 48000;
+static uint32_t output_sample_rate = 48000;
+// Channel count.
+constexpr uint32_t input_channels = 2;
+static uint32_t output_channels = 2;
+
+// Terminology: a frame is a collection of samples for each channel. e.g. 2 input samples is one input frame. This is unrelated to graphical frames.
+
+// Number of frames to duplicate for fixing interpolation at the start and end of a chunk.
+constexpr uint32_t duplicated_input_frames = 4;
+// The number of output frames to skip for playback (to avoid playing duplicate inputs twice).
+static uint32_t discarded_output_frames;
+
+constexpr uint32_t bytes_per_frame = input_channels * sizeof(float);
+
+void bodyharvest::audio::queue_samples(int16_t* audio_data, size_t sample_count) {
+    // Buffer for holding the output of swapping the audio channels. This is reused across
+    // calls to reduce runtime allocations.
+    static std::vector<float> swap_buffer;
+    static std::array<float, duplicated_input_frames * input_channels> duplicated_sample_buffer;
+
+    // Make sure the swap buffer is large enough to hold the audio data, including any extra space needed for resampling.
+    size_t resampled_sample_count = sample_count + duplicated_input_frames * input_channels;
+    size_t max_sample_count = std::max(resampled_sample_count, resampled_sample_count * audio_convert.len_mult);
+    if (max_sample_count > swap_buffer.size()) {
+        swap_buffer.resize(max_sample_count);
+    }
+
+    // Copy the duplicated frames from last chunk into this chunk
+    for (size_t i = 0; i < duplicated_input_frames * input_channels; i++) {
+        swap_buffer[i] = duplicated_sample_buffer[i];
+    }
+
+    // Convert the audio from 16-bit values to floats and swap the audio channels into the
+    // swap buffer to correct for the address xor caused by endianness handling.
+    float cur_main_volume = static_cast<float>(recompui::config::sound::get_main_volume()) / 100.0f;
+    for (size_t i = 0; i < sample_count; i += input_channels) {
+        swap_buffer[i + 0 + duplicated_input_frames * input_channels] = audio_data[i + 1] * (0.5f / 32768.0f) * cur_main_volume;
+        swap_buffer[i + 1 + duplicated_input_frames * input_channels] = audio_data[i + 0] * (0.5f / 32768.0f) * cur_main_volume;
+    }
+
+    assert(sample_count > duplicated_input_frames * input_channels);
+
+    // Copy the last converted samples into the duplicated sample buffer to reuse in resampling the next queued chunk.
+    for (size_t i = 0; i < duplicated_input_frames * input_channels; i++) {
+        duplicated_sample_buffer[i] = swap_buffer[i + sample_count];
+    }
+
+    audio_convert.buf = reinterpret_cast<Uint8*>(swap_buffer.data());
+    audio_convert.len = (sample_count + duplicated_input_frames * input_channels) * sizeof(swap_buffer[0]);
+
+    if (SDL_ConvertAudio(&audio_convert) < 0) {
+        throw std::runtime_error(std::string("Error using SDL audio converter: ") + SDL_GetError());
+    }
+
+    uint32_t num_bytes_to_queue = audio_convert.len_cvt - output_channels * discarded_output_frames * sizeof(swap_buffer[0]);
+    // Offset the data start by only half the discarded frame count as the other half of the discarded frames are at the end of the buffer.
+    float* samples_to_queue = swap_buffer.data() + output_channels * discarded_output_frames / 2;
+
+    SDL_QueueAudio(audio_device, samples_to_queue, num_bytes_to_queue);
+}
+
+size_t bodyharvest::audio::get_frames_remaining() {
+    constexpr float buffer_offset_frames = 1.0f;
+    // Get the number of remaining buffered audio bytes.
+    uint64_t buffered_byte_count = SDL_GetQueuedAudioSize(audio_device);
+
+    // Scale the byte count based on the ratio of sample rates and channel counts.
+    buffered_byte_count = buffered_byte_count * 2 * sample_rate / output_sample_rate / output_channels;
+
+    // Adjust the reported count to be some number of refreshes in the future, which helps ensure that
+    // there are enough samples even if the audio thread experiences a small amount of lag.
+    uint32_t frames_per_vi = (sample_rate / 60);
+    if (buffered_byte_count > (buffer_offset_frames * bytes_per_frame * frames_per_vi)) {
+        buffered_byte_count -= (buffer_offset_frames * bytes_per_frame * frames_per_vi);
+    }
+    else {
+        buffered_byte_count = 0;
+    }
+    // Convert from byte count to sample count.
+    return static_cast<uint32_t>(buffered_byte_count / bytes_per_frame);
+}
+
+static void update_audio_converter() {
+    if (SDL_BuildAudioCVT(&audio_convert, AUDIO_F32, input_channels, sample_rate, AUDIO_F32, output_channels, output_sample_rate) < 0) {
+        throw std::runtime_error(std::string("Error creating SDL audio converter: ") + SDL_GetError());
+    }
+
+    // Calculate the number of samples to discard based on the sample rate ratio and the duplicate frame count.
+    discarded_output_frames = duplicated_input_frames * output_sample_rate / sample_rate;
+}
+
+void bodyharvest::audio::set_frequency(uint32_t freq) {
+    sample_rate = freq;
+    update_audio_converter();
+}
+
+bool bodyharvest::audio::reset_audio(uint32_t output_freq) {
+    SDL_AudioSpec spec_desired{
+        .freq = (int)output_freq,
+        .format = AUDIO_F32,
+        .channels = (Uint8)output_channels,
+        .silence = 0, // calculated
+        .samples = 0x100, // Fairly small sample count to reduce the latency of internal buffering
+        .padding = 0, // unused
+        .size = 0, // calculated
+        .callback = nullptr,
+        .userdata = nullptr
+    };
+
+    audio_device = SDL_OpenAudioDevice(nullptr, false, &spec_desired, nullptr, 0);
+    if (audio_device == 0) {
+        std::string audio_error = std::string("No audio device could be found. Please make sure an audio device is available.\nError opening audio device: ") + std::string(SDL_GetError());
+        recompui::message_box(audio_error.c_str());
+        return false;
+    }
+
+    SDL_PauseAudioDevice(audio_device, 0);
+
+    output_sample_rate = output_freq;
+    update_audio_converter();
+
+    return true;
+}

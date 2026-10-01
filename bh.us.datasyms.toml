@@ -1,0 +1,36 @@
+# Body Harvest (US) game data symbols, shared by the game's patches and by mods.
+# No ROM address: these are absolute addresses in the main RAM segment.
+[[section]]
+name = "game_data"
+vram = 0x80000000
+size = 0x400000
+
+symbols = [
+    { name = "D_80067F70", vram = 0x80067F70 },
+    { name = "D_800475B8", vram = 0x800475B8 },
+    { name = "D_80031B60", vram = 0x80031B60 },
+    { name = "D_80031B84", vram = 0x80031B84 },
+    { name = "D_8005BB20", vram = 0x8005BB20 },
+    { name = "D_8005BB24", vram = 0x8005BB24 },
+    { name = "D_8005BB28", vram = 0x8005BB28 },
+    { name = "D_8005BB2C", vram = 0x8005BB2C },
+    { name = "D_8005BB30", vram = 0x8005BB30 },
+    { name = "D_8005BB34", vram = 0x8005BB34 },
+    { name = "D_8005BB38", vram = 0x8005BB38 },
+    { name = "D_8005BB3C", vram = 0x8005BB3C },
+    { name = "D_8005BB40", vram = 0x8005BB40 },
+    { name = "D_80068084", vram = 0x80068084 },
+    { name = "D_80068088", vram = 0x80068088 },
+    { name = "D_80047F90", vram = 0x80047F90 },
+    { name = "D_8004773C", vram = 0x8004773C },
+    { name = "D_80047740", vram = 0x80047740 },
+    { name = "D_80047748", vram = 0x80047748 },
+    { name = "D_8004794E", vram = 0x8004794E },
+    { name = "D_80047964", vram = 0x80047964 },
+    { name = "D_80052B34", vram = 0x80052B34 },
+    { name = "D_8003161C", vram = 0x8003161C },
+    { name = "D_80031618", vram = 0x80031618 },
+    { name = "D_80142E20", vram = 0x80142E20 },
+    { name = "D_80142E24", vram = 0x80142E24 },
+    { name = "D_8014FD2A", vram = 0x8014FD2A },
+]

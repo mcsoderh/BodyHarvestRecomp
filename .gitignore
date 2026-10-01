@@ -1,0 +1,58 @@
+# VSCode file settings
+.vscode/settings.json
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+
+# Input elf and rom files
+*.elf
+*.z64
+
+# Output C files
+RecompiledFuncs/
+RecompiledPatches/
+
+# Linux build output
+build/
+build-cmake/
+build-tools/
+*.o
+
+# Windows build output
+*.exe
+*.dll
+*.lib
+*.pdb
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+out/
+
+# Visual Studio cache/options directory
+.vs/
+
+# clangd cache
+/.cache/
+
+# Runtime files
+imgui.ini
+rt64.log
+
+# Recompiler Linux binaries
+/N64Recomp
+/RSPRecomp
+.DS_Store

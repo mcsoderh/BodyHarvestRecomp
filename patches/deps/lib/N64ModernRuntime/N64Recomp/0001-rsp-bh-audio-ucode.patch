@@ -1,0 +1,79 @@
+diff --git a/RSPRecomp/src/rsp_recomp.cpp b/RSPRecomp/src/rsp_recomp.cpp
+index 518477d..8ea5973 100644
+--- a/RSPRecomp/src/rsp_recomp.cpp
++++ b/RSPRecomp/src/rsp_recomp.cpp
+@@ -133,6 +133,13 @@ uint32_t expected_c0_reg_value(int cop0_reg) {
+         return 0; // Always acquire the semaphore
+     case Cop0Reg::RSP_COP0_DPC_STATUS:
+         return 0; // Good enough for the microcodes that would be recompiled (i.e. non-graphics ones)
++    case Cop0Reg::RSP_COP0_DPC_END:
++    case Cop0Reg::RSP_COP0_DPC_CURRENT:
++    case Cop0Reg::RSP_COP0_DPC_CLOCK:
++    case Cop0Reg::RSP_COP0_DPC_BUFBUSY:
++    case Cop0Reg::RSP_COP0_DPC_PIPEBUSY:
++    case Cop0Reg::RSP_COP0_DPC_TMEM:
++        return 0; // Idle RDP; audio ucodes only read these in sanity checks
+     default:
+         fmt::print(stderr, "Unhandled mfc0: {}\n", cop0_reg);
+         throw std::runtime_error("Unhandled mfc0");
+@@ -154,6 +161,10 @@ std::string_view c0_reg_write_action(int cop0_reg) {
+         return "DO_DMA_READ";
+     case Cop0Reg::RSP_COP0_SP_WR_LEN:
+         return "DO_DMA_WRITE";
++    case Cop0Reg::RSP_COP0_DPC_START:
++    case Cop0Reg::RSP_COP0_DPC_END:
++    case Cop0Reg::RSP_COP0_DPC_STATUS:
++        return ""; // No RDP to drive from non-graphics ucodes
+     default:
+         fmt::print(stderr, "Unhandled mtc0: {}\n", cop0_reg);
+         throw std::runtime_error("Unhandled mtc0");
+@@ -395,6 +406,11 @@ bool process_instruction(size_t instr_index, const std::vector<rabbitizer::Instr
+             break;
+         case InstrId::rsp_addi:
+         case InstrId::rsp_addiu:
++            // Writes to $zero are no-ops (e.g. data words interleaved with code).
++            if (rt == 0) {
++                fmt::print(output_file, "\n");
++                break;
++            }
+             print_line("{}{} = RSP_ADD32({}{}, {})", ctx_gpr_prefix(rt), rt, ctx_gpr_prefix(rs), rs, signed_imm_string);
+             break;
+         case InstrId::rsp_and:
+@@ -577,8 +593,16 @@ void write_indirect_jumps(std::ofstream& output_file, const BranchTargets& branc
+     fmt::print(output_file,
+         "do_indirect_jump:\n"
+         "    switch ((jump_target | 0x1000) & {:#X}) {{ \n", rsp_mem_mask);
++    bool emitted_1000 = false;
+     for (uint32_t branch_target: branch_targets.indirect_targets) {
++        // Targets outside IMEM have no label and can never match the masked switch.
++        if (((branch_target | 0x1000) & rsp_mem_mask) != branch_target) continue;
+         fmt::print(output_file, "        case 0x{0:04X}: goto L_{0:04X};\n", branch_target);
++        emitted_1000 |= branch_target == 0x1000;
++    }
++    if (!emitted_1000) {
++        // A jump to an unset $ra masks to 0x1000; treat it as a break.
++        fmt::print(output_file, "        case 0x1000: return RspExitReason::Broke;\n");
+     }
+     fmt::print(output_file,
+         "    }}\n"
+@@ -1064,6 +1088,20 @@ void create_function(const std::string& function_name, std::ofstream& output_fil
+             "    RSP rsp{{}};\n"
+             "    r1 = 0xFC0;\n", function_name);
+     }
++    // Direct branch targets outside the recompiled range wrap within IMEM and
++    // have no label; emit unreachable stubs so the gotos compile.
++    {
++        uint32_t text_lo = uint32_t(config.text_address & rsp_mem_mask);
++        uint32_t text_hi = uint32_t((config.text_address + config.text_size) & rsp_mem_mask);
++        if (text_hi == 0) text_hi = uint32_t(rsp_mem_mask) + 1;
++        fmt::print(output_file, "    goto skip_oob_stubs;\n");
++        for (uint32_t t : branch_targets.direct_targets) {
++            if (t < text_lo || t >= text_hi) {
++                fmt::print(output_file, "    L_{0:04X}: return RspExitReason::UnhandledJumpTarget;\n", t);
++            }
++        }
++        fmt::print(output_file, "    skip_oob_stubs:;\n");
++    }
+     // Write each instruction
+     for (size_t instr_index = 0; instr_index < instrs.size(); instr_index++) {
+         process_instruction(instr_index, instrs, output_file, branch_targets, config.unsupported_instructions, resume_targets, is_permutation, false, false);

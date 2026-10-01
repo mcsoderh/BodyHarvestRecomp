@@ -1,0 +1,40 @@
+diff --git a/src/hle/rt64_rdp.cpp b/src/hle/rt64_rdp.cpp
+index a10c11a..fa4bc78 100644
+--- a/src/hle/rt64_rdp.cpp
++++ b/src/hle/rt64_rdp.cpp
+@@ -472,6 +472,11 @@ namespace RT64 {
+     }
+ 
+     void RDP::loadTileOperation(const LoadTile &loadTile, const LoadTexture &loadTexture, bool deferred) {
++        // Hardware ignores loads with an inverted rectangle; the unsigned sizes below would underflow.
++        if ((loadTile.uls > loadTile.lrs) || (loadTile.ult > loadTile.lrt)) {
++            return;
++        }
++
+         const uint32_t bytesOffset = (loadTile.uls >> 2) << loadTexture.siz >> 1;
+         const uint32_t bytesPerRow = loadTexture.width << loadTexture.siz >> 1;
+         const uint32_t textureStart = loadTexture.address + bytesOffset + bytesPerRow * (loadTile.ult >> 2);
+@@ -511,6 +516,11 @@ namespace RT64 {
+     }
+ 
+     void RDP::loadBlockOperation(const LoadTile &loadTile, const LoadTexture &loadTexture, bool deferred) {
++        // Hardware ignores blocks with uls > lrs; the unsigned texel count below would underflow.
++        if (loadTile.uls > loadTile.lrs) {
++            return;
++        }
++
+         // Deduce loading parameters for block and the texture address.
+         const uint32_t bytesOffset = loadTile.uls << loadTexture.siz >> 1;
+         const uint32_t bytesPerRow = loadTexture.width << loadTexture.siz >> 1;
+@@ -547,6 +557,11 @@ namespace RT64 {
+     }
+ 
+     void RDP::loadTLUTOperation(const LoadTile &loadTile, const LoadTexture &loadTexture, bool deferred) {
++        // Hardware ignores loads with an inverted rectangle; the unsigned sizes below would underflow.
++        if ((loadTile.uls > loadTile.lrs) || (loadTile.ult > loadTile.lrt)) {
++            return;
++        }
++
+         // Deduce loading parameters for TLUT and the texture address.
+         const uint32_t bytesOffset = (loadTile.uls >> 2) << loadTexture.siz >> 1;
+         const uint32_t bytesPerRow = loadTexture.width << loadTexture.siz >> 1;

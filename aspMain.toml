@@ -1,0 +1,20 @@
+# Body Harvest audio microcode.
+#
+# The audio task boots through its own loader (RAM 0x8002DE10), which DMAs the
+# main ucode to IMEM 0x80 and jumps to 0x1080, so the ucode runs at IMEM 0x1080.
+text_offset = 0x2FF10
+text_size = 0xF80
+text_address = 0x04001080
+rom_file_path = "bh.us.z64"
+output_file_path = "rsp/aspMain.cpp"
+output_function_name = "aspMain"
+
+# Targets of the `jr` dispatch through the command table at DMEM 0x10, plus
+# 0x1F00 reached through the second-level lookup at ucode_data[0x32].
+extra_indirect_branch_targets = [
+    0x1118, 0x11DC, 0x1214, 0x1254,
+    0x1294, 0x12D0, 0x12EC, 0x1328,
+    0x138C, 0x140C, 0x144C, 0x1470,
+    0x170C, 0x187C, 0x1B38, 0x1E24,
+    0x1F00,
+]
